@@ -3,7 +3,7 @@
 library("RPostgreSQL")
 #Connect to the database
 drv<-dbDriver("PostgreSQL")
-con <- dbConnect(drv, dbname="drupal", host="10.0.0.16", user="drupal", port ="5432")
+con <- dbConnect(drv, dbname="drupal", host="10.0.0.17", user="drupal", port ="5432")
 #Set the search path to chado, public in the database
 dbSendQuery(con, "SET search_path TO chado, public;")
 #Query the DB to get all the attributes that are in the phenotype table
@@ -25,7 +25,12 @@ shinyUI(fluidPage(
                   label="Choose a phenotypic attribute",
                   choices = attr_names,
                   selected = NULL),
+      uiOutput("select.collection"),
       uiOutput("select.season"),
+      checkboxInput("mult", 
+                    label = "Select individual stocks (choose more than one)",
+                    value = FALSE),
+      uiOutput("select.stk"),
       actionButton("go","Run")
       
   ),
@@ -34,7 +39,7 @@ shinyUI(fluidPage(
     #Multiple tabs
     tabsetPanel(id="tabs",
                 tabPanel("Plot", plotOutput("plot")),
-                tabPanel("Normality", verbatimTextOutput("norm")),
+                tabPanel("Normality",  plotOutput("histo"), verbatimTextOutput("norm")),
                 tabPanel("Homocedasticity", verbatimTextOutput("homo")),
                 tabPanel("Differences", verbatimTextOutput("aov")),
                 tabPanel("Post-hoc", verbatimTextOutput("groups")),

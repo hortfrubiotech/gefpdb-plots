@@ -3,7 +3,7 @@
 library("RPostgreSQL")
 #Connect to the database
 drv<-dbDriver("PostgreSQL")
-con <- dbConnect(drv, dbname="drupal", host="10.0.0.16", user="drupal", port ="5432")
+con <- dbConnect(drv, dbname="drupal", host="10.0.0.17", user="drupal", port ="5432")
 #Set the search path to chado, public in the database
 dbSendQuery(con, "SET search_path TO chado, public;")
 #Query the DB to get all the attributes that are in the phenotype table
@@ -40,6 +40,7 @@ shinyUI(fluidPage(
                     placeholder = 'Please select an option below',
                     onInitialize = I('function() { this.setValue(""); }')) 
                   ),
+      uiOutput("select.collection"),
       uiOutput("select.season"),
       
       uiOutput("select.stk"),

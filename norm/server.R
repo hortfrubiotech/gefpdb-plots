@@ -9,15 +9,17 @@ library(data.table)
 library(plyr)
 #Connect to the database
 drv<-dbDriver("PostgreSQL")
-con <- dbConnect(drv, dbname="drupal", host="10.0.0.16", user="drupal", port ="5432")
+con <- dbConnect(drv, dbname="drupal", host="10.0.0.17", user="drupal", port ="5432")
 #Set the search path to chado, public in the database
 dbSendQuery(con, "SET search_path TO chado, public;")
 #Query the DB to get all the phenotypics values from all attributes and store it in a dataframe
-bulkdata<- dbGetQuery(con, "SELECT s2.uniquename AS stock, esp.value AS season,
+bulkdata<- dbGetQuery(con, "SELECT s3.uniquename AS collection, s2.uniquename AS stock, esp.value AS season,
                       c1.name AS attribute, p.value AS value, epr.value AS date, cvp.value AS unit 
                       FROM stock s 
                       JOIN stock_relationship sr ON sr.subject_id = s.stock_id
                       JOIN stock s2 ON sr.object_id=s2.stock_id
+                      JOIN stock_relationship sr2 ON sr2.subject_id = s2.stock_id
+                      JOIN stock s3 ON sr2.object_id=s3.stock_id
                       JOIN nd_experiment_stock es ON s.stock_id = es.stock_id
                       JOIN nd_experiment_stockprop esp ON es.nd_experiment_stock_id = esp.nd_experiment_stock_id         
                       LEFT JOIN chado_stock ck ON s.stock_id = ck.stock_id         
@@ -26,7 +28,7 @@ bulkdata<- dbGetQuery(con, "SELECT s2.uniquename AS stock, esp.value AS season,
                       JOIN phenotype p ON ep.phenotype_id = p.phenotype_id          
                       JOIN cvterm c1 ON p.attr_id = c1.cvterm_id            
                       JOIN cvtermprop cvp ON cvp.cvterm_id = c1.cvterm_id
-                      WHERE cvp.type_id = 43425")
+                      WHERE cvp.type_id = (SELECT c.cvterm_id FROM cvterm c WHERE c.name = 'unit')")
 bulkdata$value<-as.numeric(bulkdata$value)
 postgresqlCloseConnection(con)
 
@@ -36,12 +38,36 @@ shinyServer(function(input, output) {
     subset(bulkdata, attribute==input$attribute)
   })
   
-  #Create the selectInput for seasons
-  output$select.season<-renderUI({
+  
+  #Create the selectInput for collections
+  output$select.collection<-renderUI({
     if (input$attribute == ""){
-     seas<-NULL
+      seas<-""
     }else{
       options<- op1()
+      seas<-as.vector(options[["collection"]])
+    }
+    selectInput("collection",
+                label = "Choose a collection",
+                choices = seas,
+                selected = NULL)
+    
+  })
+  
+  op2<-reactive({
+    if (is.null(input$collection) == TRUE){ #If op1 is empty, do nothing. Prevents for errors at start the app
+      NULL
+    }else{
+    subset(op1(), collection==input$collection)
+    }
+    })
+  
+  #Create the selectInput for seasons
+  output$select.season<-renderUI({
+    if (input$collection == ""){
+     seas<-""
+    }else{
+      options<- op2()
       seas<-as.vector(options[["season"]])
     }
       selectInput("season",
@@ -52,11 +78,14 @@ shinyServer(function(input, output) {
   })
   
   #Reactive object to subset the op1 object depending on the stock input. It will be used to determine which seasons are available for a given attribute and stock. 
-  op2<-reactive({
+  op3<-reactive({
     if (is.null(input$season) == TRUE){ #If op1 is empty, do nothing. Prevents for errors at start the app
       NULL
     }else{
-      d<-op1()
+      d<-op2()
+      validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+        need(nrow(d)>0, "Waiting for your selection")
+      )
       y<-input$season
       subset(d, season==y)
     }
@@ -67,7 +96,7 @@ shinyServer(function(input, output) {
     if (input$season == ""){
   stk.opt<-NULL
     }else{
-      options<-op2()
+      options<-op3()
       stk.opt<-as.vector(options[["stock"]])
     }  
       selectInput("stock",
@@ -83,7 +112,7 @@ shinyServer(function(input, output) {
     if (is.null(input$stock) == TRUE){  # if the 'Run' button is not clicked, return nothing.
          return()
       }else{
-      subset(op2(), stock==input$stock)
+      subset(op3(), stock==input$stock)
     }  
 })
   ####################
@@ -113,8 +142,12 @@ shinyServer(function(input, output) {
     validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
       need(nrow(data)>1, "Waiting for your selection")
     )
+    breaks <- pretty(range(data$value), n = nclass.FD(data$value), min.n = 1)
+    bwidth <- breaks[2]-breaks[1]
+    x <- diff(range(data$value))
+#     range.value<- (range(data$value)[2] - range(data$value)[1])/50 
     h<-ggplot(data(), aes(x = value)) +
-    geom_histogram(aes(x=value, y=..density.., fill = ..density..)) + #use density instead of counts, nicer view
+    geom_histogram(aes(x=value, y=..density.., fill = ..density..), binwidth=x/40) + #use density instead of counts, nicer view
     geom_density() +  
     scale_fill_gradient("Count", low = "green", high = "red") + # Nice gradient colour from red to green
     labs(x=paste0(input$attribute, " ", "(", unique(data$unit), ")"))  
@@ -127,6 +160,10 @@ shinyServer(function(input, output) {
   ###Shapiro test output###       
   #########################
   output$norm<-renderPrint({
+    if (input$go  ==0){  # if the 'Run' button is not clicked, return nothing.
+      
+      return()
+    }else{
     data<-data()
     validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
       need(nrow(data)>1, "Waiting for your selection")
@@ -134,5 +171,6 @@ shinyServer(function(input, output) {
     options(contrasts=c("contr.sum","contr.poly")) 
     shap.res<-shapiro.test(data$value)
     shap.res  
+    }
   })
   })

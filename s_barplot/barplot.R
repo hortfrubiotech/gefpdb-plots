@@ -20,9 +20,10 @@ colnames(dataplot)<-c("stock", "season", "attribute", "unit",  "mean", "sd")
 
 #Define basic plots
 #Plot for values with significant differences. Define colours
-plot_sig<-p <- ggplot(data=dataplot, aes(x=stock, y=mean)) +
-               scale_fill_manual(values=c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"), guide=FALSE)
-
+plot_sig<-p <- ggplot(data=dataplot, aes(x=stock, y=mean)) 
+              
+#                scale_fill_manual(values=c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"), guide=FALSE)
+    
 #Plot for values without significant differences,use only one colour
 plot_no<- p <- ggplot(data=dataplot, aes(x=stock, y=mean)) +
                geom_bar(stat="identity", fill="#009E73") 
@@ -42,7 +43,15 @@ if (lev.pval > 0.05){ #If the p.value is > 0.05 an ANOVA will be performed,
     #Merge the dataplot df with the group.res$groups df obtained in the HSD.test. In this way, the letters for each group are appended to the original dataplot df as a new column named 'M'. The merge is possible beacause of the 'groups$trt' column, which contains the stock names.
     dataplot<-merge(dataplot, group.res$groups, by.x = "stock", by.y="trt")
     #When ANOVA p.value < 0.05, the bar colours are mapped to the M column (groups from HSD.test), therefore different colours means significant differences.
+    
+    n.colors<-length(levels(as.factor(dataplot$M)))
+    # Brewer palette Paired 12
+    pal12 = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", 
+              "#E31A1C", "#FDBF6F", "#FF7F00", "#CAB2D6", "#6A3D9A",
+              "#FFFF99", "#B15928")
+    palette<-colorRampPalette(pal12)(n.colors)
     p <- plot_sig + geom_bar(data=dataplot, aes(fill=M), stat="identity") +
+                    scale_fill_brewer(palette="palette") +
                     geom_text(data=dataplot, aes(x=stock, y=(1.1 * mean + sd), label = M)) 
       }else{ #If the ANOVA pvalue > 0.05, use the plot_no, the same colour for all bars
    p <- plot_no
@@ -55,8 +64,16 @@ if (lev.pval > 0.05){ #If the p.value is > 0.05 an ANOVA will be performed,
     group.res$groups$trt<-gsub(" ", "", group.res$groups$trt, fixed=T)
     #Merge the dataplot df with the group.res$groups df obtained in the kruskal test. In this way, the letters for each group are appended to the original dataplot df as a new column named 'M'. The merge is possible beacause of the 'groups$trt' column, which contains the stock names.
     dataplot<-merge(dataplot, group.res$groups, by.x = "stock", by.y="trt")
+    
+    n.colors<-length(levels(as.factor(dataplot$M)))
+    # Brewer palette Paired 12
+    pal12 = c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", 
+              "#E31A1C", "#FDBF6F", "#FF7F00", "#CAB2D6", "#6A3D9A",
+              "#FFFF99", "#B15928")
+    palette<-colorRampPalette(pal12)(n.colors)
     #When kruskal.test p.value < 0.05, the bar colours are mapped to the M column (groups from 'kruskal' agricolae function), therefore different colours means significant differences.
     p <- plot_sig + geom_bar(data=dataplot, aes(fill=M), stat="identity") +
+      scale_fill_brewer(palette="palette") +
       geom_text(data=dataplot, aes(x=stock, y=(1.1 * mean + sd), label = M)) 
   }else{ #If the kruskal.test pvalue > 0.05, use the plot_no, the same colour for all bars
     p <- plot_no

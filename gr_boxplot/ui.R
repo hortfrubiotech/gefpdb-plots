@@ -3,7 +3,7 @@
 library("RPostgreSQL")
 #Connect to the database
 drv<-dbDriver("PostgreSQL")
-con <- dbConnect(drv, dbname="drupal", host="10.0.0.16", user="drupal", port ="5432")
+con <- dbConnect(drv, dbname="drupal", host="10.0.0.17", user="drupal", port ="5432")
 #Set the search path to chado, public in the database
 dbSendQuery(con, "SET search_path TO chado, public;")
 #Query the DB to get all the attributes that are in the phenotype table
@@ -25,14 +25,23 @@ shinyUI(fluidPage(
       #The stock input options depends on the attribute selected previously. Defined in server.R
       #The 'Run' button prevents shiny for starting before any option is selected.
       #A checkbox to add control values and the Run button to avoid error messages appears at start
-      selectInput("attribute",
-                  label="Choose a phenotypic attribute",
-                  choices = attr_names,
-                  selected = NULL),
-      uiOutput("select.stk"),
-      checkboxInput("control", 
-                    label = "Add control vaules",
+      selectizeInput("attribute",
+                     label="Choose a phenotypic attribute",
+                     choices = attr_names,
+                     options = list(
+                       placeholder = 'Please select an option below',
+                       onInitialize = I('function() { this.setValue(""); }')) 
+      ),
+      uiOutput("select.collection"),
+      checkboxInput("all",
+                    label = "Select all stock",
                     value = FALSE),
+      
+      uiOutput("select.stk"),
+      checkboxInput("check.season",
+                    label = "Select a particular season",
+                    value = FALSE),
+      uiOutput("select.season"),
       actionButton("go","Run")
     ),
     mainPanel( 

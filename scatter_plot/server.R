@@ -10,15 +10,17 @@ library(plyr)
 library(nortest)
 #Connect to the database
 drv<-dbDriver("PostgreSQL")
-con <- dbConnect(drv, dbname="drupal", host="10.0.0.16", user="drupal", port ="5432")
+con <- dbConnect(drv, dbname="drupal", host="10.0.0.17", user="drupal", port ="5432")
 #Set the search path to chado, public in the database
 dbSendQuery(con, "SET search_path TO chado, public;")
 #Query the DB to get all the phenotypics values from all attributes and store it in a dataframe
-bulkdata<- dbGetQuery(con, "SELECT s2.uniquename AS stock, s.uniquename AS sample, esp.value AS season,
+bulkdata<- dbGetQuery(con, "SELECT s3.uniquename AS collection, s2.uniquename AS stock, esp.value AS season,
                       c1.name AS attribute, p.value AS value, epr.value AS date, cvp.value AS unit 
                       FROM stock s 
                       JOIN stock_relationship sr ON sr.subject_id = s.stock_id
                       JOIN stock s2 ON sr.object_id=s2.stock_id
+                      JOIN stock_relationship sr2 ON sr2.subject_id = s2.stock_id
+                      JOIN stock s3 ON sr2.object_id=s3.stock_id
                       JOIN nd_experiment_stock es ON s.stock_id = es.stock_id
                       JOIN nd_experiment_stockprop esp ON es.nd_experiment_stock_id = esp.nd_experiment_stock_id         
                       LEFT JOIN chado_stock ck ON s.stock_id = ck.stock_id         
@@ -27,7 +29,7 @@ bulkdata<- dbGetQuery(con, "SELECT s2.uniquename AS stock, s.uniquename AS sampl
                       JOIN phenotype p ON ep.phenotype_id = p.phenotype_id          
                       JOIN cvterm c1 ON p.attr_id = c1.cvterm_id            
                       JOIN cvtermprop cvp ON cvp.cvterm_id = c1.cvterm_id
-                      WHERE cvp.type_id = 43425")
+                      WHERE cvp.type_id = (SELECT c.cvterm_id FROM cvterm c WHERE c.name = 'unit')")
 bulkdata$value<-as.numeric(bulkdata$value)
 postgresqlCloseConnection(con)
 
@@ -37,7 +39,7 @@ bulk.ls<-split(bulkdata, bulkdata$attribute)
 
 #Define the list which will contain the selected lines
 stk.ls<-list()
-
+coll.ls<-list()
 shinyServer(function(input, output) {
   
   #Reactive object to subset the bulkdata depending on the attribute inputs. It will be used to determine which seasons are available for a given attribute.
@@ -46,11 +48,49 @@ shinyServer(function(input, output) {
     at2=input$at2
     at1df<-bulk.ls[[at1]] #Get the df from the df list which contains the values of the first input attribute
     at2df<-bulk.ls[[at2]] ##Get the df from the df list  which contains the values of the second input attribute
-    data<-merge(at1df, at2df, by=c("stock", "sample", "date", "season"))#Merge both df into a unique df which contains the data from both attributes. New columns are named attribute.x  value.x	unit.x	attribute.y	value.y	unit.y
-    validate(#Avoid red error message to be shown when the two selected attributes cannot be compare (they're not in the same year). Meanwhile, print the message.      need(nrow(data) > 1, "It's not possible to compare the two selected attributes, please select another pair of values."))
+    data<-merge(at1df, at2df, by=c("collection", "stock", "date", "season"))#Merge both df into a unique df which contains the data from both attributes. New columns are named attribute.x  value.x	unit.x	attribute.y	value.y	unit.y
+    validate(#Avoid red error message to be shown when the two selected attributes cannot be compare (they're not in the same year). Meanwhile, print the message.      
+      need(nrow(data) > 1, "It's not possible to compare the two selected attributes, please select another pair of values.")
+      )
     data
     })
   
+  
+  #Create the selectInput for collections
+  output$select.collection<-renderUI({
+    if (input$at2 == ""){
+      seas<-""
+    }else{
+      options<- op1()
+      seas<-as.vector(unique(options[["collection"]]))
+    }
+    selectInput("collection",
+                label = "Choose a collection",
+                choices = seas,
+                selected = NULL,
+                multiple=TRUE)
+    
+  })
+  
+  op2<-reactive({
+    if (is.null(input$collection) == TRUE){ #If op1 is empty, do nothing. Prevents for errors at start the app
+      NULL
+    }else{
+      coll<-input$collection
+      #       stk.ls[stock]<-stock #Create a list from the multiple selectInput, each selected stock is appended to the list
+      #       if (input$control == T){ # If the checkbox of control values is clicked, add the control stock name to the list of stocks
+      #         stk.ls["control"]<-"chaendler" 
+      #       }
+      #Loop over the list of stocks, subset the bulkdata df with the user input for attributes and stock
+      #Lapply create a list, in this case a list of df, each one corresponding to the subsetted df for the combiation of stock and attribute
+      coll.ls[coll]<-coll
+      data.ls<-lapply(coll.ls, function(x){
+        subset(op1(), collection==x)  
+      })
+      rbindlist(data.ls) #Bind all the df stored in the data.ls list of df
+      
+    }
+  })
 
   #Create the selectInput for seasons. 
   output$select.season<-renderUI({
@@ -60,8 +100,8 @@ shinyServer(function(input, output) {
     if (input$at2 == ""){ #If attr 2 is empty OR the checkbox is selected, the selectInput for seasons is not shown
       seas<-""
     }else{
-      options<- op1()    
-      seas<-as.vector(options[["season"]])
+      options<- op2()    
+      seas<-as.vector(unique(options[["season"]]))
     }
       selectInput("season",
                   label = "Choose a season",
@@ -71,33 +111,33 @@ shinyServer(function(input, output) {
   })
   #Reactive object to subset the op1 object depending on the season input. 
   #It's used to determine which stock are available for a given attribute and season.
-  op2<-reactive({
-    if (input$at2 == ""){ #If attr 2 is empty do nothing
+  op3<-reactive({
+    if (input$season == ""){ #If attr 2 is empty do nothing
       return()
     }else{
       all<-input$all
       year=input$season
-      d<-op1()
+      d<-op2()
       if(all == TRUE){#If the checkbox is selected, don't subset the op1 and select all years
-        op1()
+        op2()
       }else{
       subset(d, season==year)
     }
     }
   })
   output$select.stk<-renderUI({
-    options<-op2()  
+    options<-op3()  
     
     if (input$season == ""){ #If season is empty, the selectInput for stock is not shown
       stk.opt<-NULL
     }else{
-      
-      stk.opt<-as.vector(options[["stock"]])
+    
+      stk.opt<-as.vector(unique(options[["stock"]]))
     }
-    if (input$all == TRUE){
-      
-      stk.opt<-as.vector(options[["stock"]])
-    }
+#     if (input$all == TRUE){
+#       
+#       stk.opt<-as.vector(options[["stock"]])
+#     }
       selectInput("stock",
                   label="Choose a stock",
                   choices = stk.opt,
@@ -112,7 +152,7 @@ shinyServer(function(input, output) {
     if (input$go==0){
       return(NULL)
     }else{
-      d<-op2()  
+      d<-op3()  
       stock<-input$stock
       #Create a list of stock from the selected values in the selectInpeut widget. 
       stk.ls[stock]<-stock
@@ -150,6 +190,7 @@ shinyServer(function(input, output) {
     cor.plot<-function(i, data, y, x){ 
       #Subset the data to get a unique stock
       d<-subset(data, stock == i)
+      d<-na.omit(d)
       if(length(d$value.x) < 5 | length(d$value.y) < 5){ #If the stock has less than 5 values the statistic cannot be computed, so stop the execution and print an error
         stop(paste0("The stock ", i, " has less than 5 values, please remove this stock from your selection"))
       }

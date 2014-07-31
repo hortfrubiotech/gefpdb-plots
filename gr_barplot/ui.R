@@ -27,16 +27,24 @@ shinyUI(fluidPage(
                   label="Select a phenotypic attribute",
                   choices = attr_names,
                   selected = NULL),
-      checkboxInput("mult", 
-                    label = "Select multiple stocks (no statistical analysis possible)",
-                    value = FALSE),
+      
+      uiOutput("collection"),
       uiOutput("stk"),
       uiOutput("list"),
+      uiOutput("all.stk"),checkboxInput("mult", 
+                                        label = "Select multiple stocks (no statistical analysis possible)",
+                                        value = FALSE),
       actionButton("go","Run")        
   ),
 mainPanel( 
   
-  plotOutput('plot'),
+#   plotOutput('plot'),
+  
+  tabsetPanel(id="tabs",
+#               tabPanel("Plot", plotOutput("plot")),
+              tabPanel("Plot", plotOutput("plot")),
+              tabPanel("Table", tableOutput("table"))
+  ),
   #Avoid error messages to be printed in red color
   tags$style(type="text/css",
              "#map.shiny-output-error { color: inherit;}",

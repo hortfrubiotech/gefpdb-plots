@@ -24,10 +24,18 @@ shinyUI(fluidPage(
       #The attribute input is fixed and gets the values from the DB
       #The season input options depends on the attribute selected previously. Defined in server.R
       #The 'Run' button prevents shiny for starting before any option is selected.
-      selectInput("attribute",
-                  label="Choose a phenotypic attribute",
-                  choices = attr_names,
-                  selected = NULL),
+#       selectInput("attribute",
+#                   label="Choose a phenotypic attribute",
+#                   choices = attr_names,
+#                   selected = NULL),
+      selectizeInput("attribute",
+                     label="Choose a phenotypic attribute",
+                     choices = attr_names,
+                     options = list(
+                       placeholder = 'Please select an option below',
+                       onInitialize = I('function() { this.setValue(""); }')) 
+      ),
+      uiOutput("select.collection"),
       uiOutput("select.season"),
       actionButton("go","Run")
     ),

@@ -4,18 +4,22 @@ library(shiny)
 library(ggplot2)
 library("RPostgreSQL")
 library(agricolae)
+library(data.table)
 library(car)
+library(RColorBrewer)
 #Connect to the database
 drv<-dbDriver("PostgreSQL")
-con <- dbConnect(drv, dbname="drupal", host="10.0.0.16", user="drupal", port ="5432")
+con <- dbConnect(drv, dbname="drupal", host="10.0.0.17", user="drupal", port ="5432")
 #Set the search path to chado, public in the database
 dbSendQuery(con, "SET search_path TO chado, public;")
 #Query the DB to get all the phenotypics values from all attributes and store it in a dataframe
-bulkdata<- dbGetQuery(con, "SELECT s.uniquename AS sample, s2.uniquename AS stock, esp.value AS season,
+bulkdata<- dbGetQuery(con, "SELECT s3.uniquename AS collection, s2.uniquename AS stock, esp.value AS season,
                       c1.name AS attribute, p.value AS value, epr.value AS date, cvp.value AS unit 
                       FROM stock s 
                       JOIN stock_relationship sr ON sr.subject_id = s.stock_id
                       JOIN stock s2 ON sr.object_id=s2.stock_id
+                      JOIN stock_relationship sr2 ON sr2.subject_id = s2.stock_id
+                      JOIN stock s3 ON sr2.object_id=s3.stock_id
                       JOIN nd_experiment_stock es ON s.stock_id = es.stock_id
                       JOIN nd_experiment_stockprop esp ON es.nd_experiment_stock_id = esp.nd_experiment_stock_id         
                       LEFT JOIN chado_stock ck ON s.stock_id = ck.stock_id         
@@ -24,23 +28,51 @@ bulkdata<- dbGetQuery(con, "SELECT s.uniquename AS sample, s2.uniquename AS stoc
                       JOIN phenotype p ON ep.phenotype_id = p.phenotype_id          
                       JOIN cvterm c1 ON p.attr_id = c1.cvterm_id            
                       JOIN cvtermprop cvp ON cvp.cvterm_id = c1.cvterm_id
-                      WHERE cvp.type_id = 43425")
+                      WHERE cvp.type_id = (SELECT c.cvterm_id FROM cvterm c WHERE c.name = 'unit')")
 bulkdata$value<-as.numeric(bulkdata$value)
 postgresqlCloseConnection(con)
 #Script were the dataplot function is defined
 source("barplot.R")
 source("download_result.R")
+stk.ls<-list()
 shinyServer(function(input, output) {
   #Reactive object to subset the bulkdata depending on the attribute input. It will be used to determine which seasons are availables for a given attribute.
   options<-reactive({
     subset(bulkdata, attribute==input$attribute)
+  })
+  
+  #Create the selectInput for collections.    
+  output$select.collection<-renderUI({
+    if (is.null(input$attribute) == TRUE){
+      return() # If no attribute is selected, return a empty object. 
+    }else{
+      options<-options()#If an attribute is selected, get the seasons availables in the subsetted 'options' object
+      choice<-as.vector(options[["collection"]])
+      #Create the selectInput 
+      selectInput("collection",
+                  label = "Choose a collection",
+                  choices = choice,
+                  selected = NULL,
+                  multiple = TRUE)
+    }
+    
+  })
+  #Reactive object to subset the options object depending on the collection input.
+  #It's used to determine which seasons are available for a given attribute and collection.
+  op2<-reactive({
+    if(is.null(input$collection) == TRUE){
+      return()
+    }else
+    {
+      subset(options(), collection==input$collection)
+    }
   })
   #Create the selectInput for seasons.    
   output$select.season<-renderUI({
     if (is.null(input$attribute) == TRUE){
       return() # If no attribute is selected, return a empty object. 
     }else{
-      options<-options()#If an attribute is selected, get the seasons availables in the subsetted 'options' object
+      options<-op2()#If an attribute is selected, get the seasons availables in the subsetted 'options' object
       seas<-as.vector(options[["season"]])
       #Create the selectInput 
       selectInput("season",
@@ -48,18 +80,60 @@ shinyServer(function(input, output) {
                   choices = seas,
                   selected = NULL)
     }
-
+    
   })
-
+  
+  op3<-reactive({
+    if(is.null(input$season) == TRUE){
+      return()
+    }else
+    {
+      validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+        need(nrow(op2())>0, "Waiting for your selection")
+      )
+      subset(op2(), season==input$season)
+  
+    }
+  })
+  
+  output$select.stk<-renderUI({
+    if (input$mult == FALSE){ #if the check button is not selected, don't show this box
+      return()
+    }else{
+      options<-op3()
+      stk.opt<-as.vector(options[["stock"]])
+      selectInput("stkList",
+                  label="Choose a stock",
+                  choices = stk.opt,
+                  selected = NULL,
+                  multiple=TRUE)
+    }
+  })
+  
   #Get the dataset which will be ploted latter. 
   data<-reactive({
     if (input$go  ==0){ # if the 'Run' button is not clicked, return nothing.
-      
       return(NULL)
     }else{  #Else subset the bulkdata object depending on the user inputs. 
-   sb<-subset(bulkdata, attribute==input$attribute & season==input$season)
+      d<-op3()
+      if(input$mult == FALSE){ #if the check button is not selected, don't show this box
+        d
+      }else{
+        stock<-input$stkList
+        stk.ls[stock]<-stock
+        data.ls<-lapply(stk.ls, function(x){
+          subdata<-subset(d, stock==x)
+          validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+            need(nrow(subdata)>0, "Waiting for your selection")
+          )
+          subdata})
+          
+        
+        #Bind all the df in the data.ls list, creates a unique df
+        rbindlist(data.ls)
+      }
     }
-   })
+  })
   
   #Plot tab
   output$plot<-renderPlot({
@@ -71,108 +145,108 @@ shinyServer(function(input, output) {
       validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
         need(nrow(data)>0, "Waiting for your selection")
       )
-        p<-printplot(data)
-        print(p)      
+      p<-printplot(data)
+      print(p)      
     }
-        })
+  })
   #Normality tab, print the result of an normality test       
   output$norm<-renderPrint({
     if (input$go  ==0){ # if the 'Run' button is not clicked, return nothing.
       
       return(NULL)
     }else{ #Else, shapiro.test on the attribute values.
-    data<-data()
-    validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
-      need(nrow(data)>0, "Waiting for your selection")
-    )
-    shap.res<-shapiro.test(data$value)
-    shap.res  
+      data<-data()
+      validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+        need(nrow(data)>0, "Waiting for your selection")
+      )
+      shap.res<-shapiro.test(data$value)
+      shap.res  
     }
-    })
+  })
   #Homocedasticity tab, , print the result of an levene Test for homogenity of variances.
   output$homo<-renderPrint({
     if (input$go  ==0){ # if the 'Run' button is not clicked, return nothing.
       
       return(NULL)
     }else{ # Else, leveneTest on the attribute values over the stocks. 
-    data<-data()
-    validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
-      need(nrow(data)>0, "Waiting for your selection")
-    )
-    lev.res<-leveneTest(value ~ stock, data=data)
-    lev.res
+      data<-data()
+      validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+        need(nrow(data)>0, "Waiting for your selection")
+      )
+      lev.res<-leveneTest(value ~ stock, data=data)
+      lev.res
     }
-    })
+  })
   #Differences tab, print the result of an statistical test
   output$aov<-renderPrint({
     if (input$go  ==0){ # if the 'Run' button is not clicked, return nothing.
       
       return(NULL)
     }else{ #Perform a test, ANOVA or Kruskal depending on the obtained levene.Test p.value 
-    #If the p.value is > 0.05 an ANOVA will be performed, else a kruskal.test will be performed. 
-    data<-data()
-    validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
-      need(nrow(data)>0, "Waiting for your selection")
-    )
-    lev.res<-leveneTest(value ~ as.factor(stock), data=data)
-    lev.pval<-lev.res[["Pr(>F)"]][[1]]
-        if (lev.pval  > 0.05){ 
+      #If the p.value is > 0.05 an ANOVA will be performed, else a kruskal.test will be performed. 
+      data<-data()
+      validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+        need(nrow(data)>0, "Waiting for your selection")
+      )
+      lev.res<-leveneTest(value ~ as.factor(stock), data=data)
+      lev.pval<-lev.res[["Pr(>F)"]][[1]]
+      if (lev.pval  > 0.05){ 
         aov.res<-aov(value ~ stock, data)
         summary(aov.res)
-        }else{
+      }else{
         kw.res<-kruskal.test(value~as.factor(stock), data = data)
         kw.res
-        }
+      }
     }
-       })
+  })
   #Groups tab. Print the result of an statistical test to search for differences among groups (Tukey test or Kruskall)
   output$groups<-renderPrint({
     if (input$go  ==0){ # if the 'Run' button is not clicked, return nothing.
       
       return(NULL)
     }else{ 
-    #Perform a test, ANOVA or Kruskal depending on the obtained levene.Test p.value 
-    data<-data()
-    validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
-      need(nrow(data)>0, "Waiting for your selection")
-    )
-    lev.res<-leveneTest(value ~ as.factor(stock), data=data)
-    lev.pval<-lev.res[["Pr(>F)"]][[1]]
-    if (lev.pval > 0.05){#If the p.value is > 0.05 an ANOVA will be performed,
-      aov.res<-aov(value ~ stock, data)
-      aov.sum<-summary(aov.res)
-      aov.pval<-aov.sum[[1]]$'Pr(>F)'[[1]]#here is where the p.value is obtained in the summary(aov) object
-          if(aov.pval < 0.05){ # If the ANOVA returns a p.value < 0.05 a Tukey test will be performed
-            tuk.res<-HSD.test(aov.res, "stock", group = T)  
-            tuk.res
-          }else{ # Else, print this:
-            print("Anova was no significant")
-          }
-    }else{ #else a kruskal.test will be performed. 
-      kw.res<-kruskal.test(value~as.factor(stock), data = data)
-            if(kw.res[["p.value"]] < 0.05){ # If the p.value obtained is < 0.05 a kruskal test from the agricolae package will be performed.
-              group.res<-kruskal(y=data$value, trt=data$stock, group=T,  p.adj="bonferroni")
-              group.res
-            }else{# Else, print this:
-            print("The kruskal test was not significant")
-             }
+      #Perform a test, ANOVA or Kruskal depending on the obtained levene.Test p.value 
+      data<-data()
+      validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+        need(nrow(data)>0, "Waiting for your selection")
+      )
+      lev.res<-leveneTest(value ~ as.factor(stock), data=data)
+      lev.pval<-lev.res[["Pr(>F)"]][[1]]
+      if (lev.pval > 0.05){#If the p.value is > 0.05 an ANOVA will be performed,
+        aov.res<-aov(value ~ stock, data)
+        aov.sum<-summary(aov.res)
+        aov.pval<-aov.sum[[1]]$'Pr(>F)'[[1]]#here is where the p.value is obtained in the summary(aov) object
+        if(aov.pval < 0.05){ # If the ANOVA returns a p.value < 0.05 a Tukey test will be performed
+          tuk.res<-HSD.test(aov.res, "stock", group = T)  
+          tuk.res
+        }else{ # Else, print this:
+          print("Anova was no significant")
+        }
+      }else{ #else a kruskal.test will be performed. 
+        kw.res<-kruskal.test(value~as.factor(stock), data = data)
+        if(kw.res[["p.value"]] < 0.05){ # If the p.value obtained is < 0.05 a kruskal test from the agricolae package will be performed.
+          group.res<-kruskal(y=data$value, trt=data$stock, group=T,  p.adj="bonferroni")
+          group.res
+        }else{# Else, print this:
+          print("The kruskal test was not significant")
+        }
       }
     }   
-    })
-
-output$downloadData <- downloadHandler(
-
-  # This function returns a string which tells the client
-  # browser what name to use when saving the file.
-  filename = function() {
-    paste0(input$attribute, "-", input$season, ".csv")
-  },
-  # This function should write data to a file given to it by
-  # the argument 'file'.
-  content = function(file) {
-    # Write to a file specified by the 'file' argument
-    write.table(download(data()), file, sep="\t", row.names = FALSE)
+  })
   
-  }
-)
+  output$downloadData <- downloadHandler(
+    
+    # This function returns a string which tells the client
+    # browser what name to use when saving the file.
+    filename = function() {
+      paste0(input$attribute, "-", input$season, ".csv")
+    },
+    # This function should write data to a file given to it by
+    # the argument 'file'.
+    content = function(file) {
+      # Write to a file specified by the 'file' argument
+      write.table(download(data()), file, sep="\t", row.names = FALSE)
+      
+    }
+  )
 })

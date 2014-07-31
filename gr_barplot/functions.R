@@ -100,7 +100,7 @@
 printplot<- function(data, stk){
   
   ##Add control stock to stk list
-  stk["control"]<-"chaendler"  
+#   stk["control"]<-"chaendler"  
   
   ### Prepare the data for ggplot ###
   
@@ -161,23 +161,26 @@ printplot<- function(data, stk){
     ##Merge 'dataplot' df with st.all. This adds the 'color' column which cotains the results of the analysis and will be used to set the colour in the barplot. 
     dataplot<-merge(dataplot, st.all, by=c("season", "stock"))  
     
-    #Apply seasons.aov function for each stock. 
-    #Returns a list of lists. Each list contains the results of the analysis performed over all the seasons on a individual stock
-    st.year<-dlply(data, .(stock), season.test)
-    
     ##Plot      
     ##x is mapped to season, y to mean values, groups of bars to stock and colour to 'color' column
     p<-ggplot(dataplot, aes(season, mean, group=stock, fill=color))  +
       scale_fill_manual(name="Differences", values=c("darkorchid1", "darkolivegreen2", "orange1")) #Define the colours used in the barplot
     
+    
+    # If there is more than one season, test for differences among values from different seasons
+    if(length(levels(as.factor(data$season))) > 1){
+    #Apply seasons.aov function for each stock. 
+    #Returns a list of lists. Each list contains the results of the analysis performed over all the seasons on a individual stock
+    st.year<-dlply(data, .(stock), season.test)
+    
     ##Check if the season.test function has returned a pval < 0.05 for the problem stock. stk[[-2]] means the stock which is not the control. Control is always in position 2 because is appended to the stk list inside the function 
-    if (st.year[[(stk[[-2]])]][["pval"]] < 0.05){
+    if (st.year[[(stk[[1]])]][["pval"]] < 0.05){
       ##if pval is < 0.05, merge 'dataplot' df with the df stored in the st.year$"stockname" list, which is the 'groups' df returned by 'HSD.test' and 'kruskall' functions (from agricolae)
       dataplot<-merge(dataplot, st.year[[stk[[-2]]]][["groups"]], by.x = c("season", "stock"), by.y=c("trt", "stock"), all=TRUE)
       ##Add labels to columns of problem stock. Labels are in dataplot$M and comes from 'groups' df merged previously. Labels are positioned above of error bar with (1.1 * mean +sd)
       p<-  p + geom_text(data=dataplot, aes(y= (1.1 * mean + sd), label = M), position = position_dodge(width=0.9))##grouped postion http://stackoverflow.com/questions/18518558/label-bar-plot-with-geom-text-in-ggplot
     }
-    
+    }    
 
     ##Define type of plot, and error bar and axis names    
     p <- p + geom_bar(position="dodge", stat="identity") +
@@ -201,7 +204,7 @@ printplot<- function(data, stk){
 #Two arguments are provided, a df containing the data and a list of stock names.
 s.plot<- function(data, stk){
   
-  stk["control"]<-"chaendler"  
+#   stk["control"]<-"chaendler"  
   
   # Get the mean values grouping by stock, season and attributes.
   dataplot<-aggregate(data$value, by= list(data$stock, data$season, 
@@ -217,16 +220,18 @@ s.plot<- function(data, stk){
   colnames(dataplot)<-c("stock", "season", "attribute", "unit",  "mean", "sd")
   
   
-  p<-ggplot(dataplot, aes(season, mean, fill=stock))
-  
+  p<-ggplot(dataplot, aes(stock, mean, fill=stock))
+  #position="dodge", stat="identity"
   ##Grouped bar plot with sd and y-axis label
-  p<- p + geom_bar(position="dodge", stat="identity") +
+  p<- p + geom_bar() +
     geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
                   side=.3,
                   width=.2, # Width of the error bars
                   position=position_dodge(.9)) +
     labs(y =  paste0(unique(dataplot$attribute), " ", "(", unique(dataplot$unit), ")"),
-         title="No statistical analysis possible")
+         title="No statistical analysis possible") +
+        facet_wrap(~season) +
+    theme(axis.text.x=element_text(face="bold", angle=70, hjust=1, size=12)) 
   
   p
 }
