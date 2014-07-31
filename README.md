@@ -5,7 +5,7 @@ GEFPDB plots
 
 A collection of shiny apps to represent biological phenotypic data from a Chado DB.
 
-These apps have been developed for the www.gefpdb.net site, and can be found at www.gefpdb.net/data_visualization.
+These apps have been developed for the GEFPDB project.
 
 The available plots are:
 
