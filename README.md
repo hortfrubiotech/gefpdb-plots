@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 shiny_plots
 ===========
 
@@ -29,3 +30,9 @@ Many thanks to the developers and the community of the R-project and the package
 
 Also a special thanks to the GMOD community for the provided support. 
 http://www.gmod.org/wiki/Main_Page
+=======
+gefpdb-plots
+============
+
+Shiny apps develped for the gefpdb project.
+>>>>>>> 9502706c5e63d39d47509ad1540224e5bc19122d
