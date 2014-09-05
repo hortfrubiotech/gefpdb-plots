@@ -46,8 +46,8 @@ shinyServer(function(input, output) {
     filter(bulkdata, attribute==input$attribute)
   })
   
+  ### UI output ###
   #Create the selectInput for collections.
-  
   output$collection<-renderUI({
     if (is.null(input$attribute) == TRUE){ #Returns nothing if there is no attribute selected.
       return()
@@ -62,6 +62,7 @@ shinyServer(function(input, output) {
                   multiple= TRUE)                  
     }
   })
+  
   
   op2<-reactive({
     if(is.null(input$attribute) == TRUE){
@@ -83,6 +84,8 @@ shinyServer(function(input, output) {
       rbindlist(data.ls)
     }
   })
+  
+  ### UI output ###
   #Create the selectInput for one stock.
   output$stk<-renderUI({
     if (is.null(input$attribute) == TRUE | input$mult == TRUE | input$all == TRUE ){ #Returns nothing if there is no attribute selected or the user has checked the multiple-stock checkbox.
@@ -98,7 +101,7 @@ shinyServer(function(input, output) {
     }
   })
   
-  
+  ### UI output ###
   #Create the selectInput for a list of stocks. 
   output$list<-renderUI({
     if (input$mult == FALSE){ #if the check button is not selected, don't show this box

@@ -34,6 +34,8 @@ bulkdata$value<-as.numeric(bulkdata$value)
 postgresqlCloseConnection(con)
 
 
+
+
 #Create a list of df, each one storing values for an unique attribute
 bulk.ls<-split(bulkdata, bulkdata$attribute)
 
@@ -185,7 +187,7 @@ shinyServer(function(input, output) {
     #######################
     ###cor.plot function###
     #######################
-    #This function tests for normality of the data, calculates the correlation coefficients for two of attributes
+    #This function tests for normality of the data, calculates the correlation coefficients for two attributes
     
     cor.plot<-function(i, data, y, x){ 
       #Subset the data to get a unique stock
@@ -248,13 +250,82 @@ shinyServer(function(input, output) {
       scale_color_discrete(name="stock") +# The name of the legend,
       geom_smooth(method="lm")+
       # Axis labs, attribute name (unit)
-      labs(x=paste0(input$at1, " ", "(", unique(data$unit.x), ")" ), y=paste0(input$at2, " ", "(", unique(data$unit.y), ")" )) + #labs for both axis
+      labs(x=paste0(input$at1, " ", "(", unique(data$unit.x), ")" ), y=paste0(input$at2, " ", "(", unique(data$unit.y), ")" )) #+ #labs for both axis
       # R label, correlation coefficient
-      geom_text(data=cor.df, aes(x=xr, y=yr, label=R, group=NULL),size=4, hjust=0, parse=T)  +
+#       geom_text(data=cor.df, aes(x=xr, y=yr, label=R, group=NULL),size=4, hjust=0, parse=T)  +
       # P label, p.value
-      geom_text(data=cor.df, aes(x=xp, y=yp, label=P, group=NULL),size=4, hjust=0, parse=T) 
+#       geom_text(data=cor.df, aes(x=xp, y=yp, label=P, group=NULL),size=4, hjust=0, parse=T) 
     print(p)
     
+    }
+  })
+  output$table<-renderTable({
+    if (input$go==0){  #if the 'Run' button is not clicked, don't start the plot
+      return(NULL)
+    }else{
+      data<-data()
+      
+      validate(#Avoid red error message to be shown when the user changes the attribute. Meanwhile, print the message "waiting for your selection"
+        need(nrow(data)>1, "Waiting for your selection")
+      )
+      #Create a list of stock from the stock names stored in data(), that is, the stocks selected by the user
+      stk.ls<-as.list(levels(as.factor(data$stock)))
+      #Get the max value in y and min value in x. This is used to define the position of labels within the plot
+      max.y<-max(data$value.y)
+      min.x<-min(data$value.x)
+      
+      #######################
+      ###cor.table function###
+      #######################
+      #This function tests for normality of the data, calculates the correlation coefficients for two attributes
+      
+      cor.table<-function(i, data, y, x){ 
+        #Subset the data to get a unique stock
+        d<-subset(data, stock == i)
+        d<-na.omit(d)
+        if(length(d$value.x) < 5 | length(d$value.y) < 5){ #If the stock has less than 5 values the statistic cannot be computed, so stop the execution and print an error
+          stop(paste0("The stock ", i, " has less than 5 values, please remove this stock from your selection"))
+        }
+        if(length(d$value.x) > 2000){#If there are more than 2000 values in value.x (attr1), performs a  Anderson-Darling test  from nortest package
+          nor.x<-ad.test(d$value.x)
+        }else{#When there are less than 2000 values, performs a shapiro test
+          nor.x<-shapiro.test(d$value.x)
+        }
+        if(length(d$value.y) > 2000){#If there are more than 2000 values in value.y (attr2), performs a  Anderson-Darling test  from nortest package
+          nor.y<-ad.test(d$value.y)
+        }else{#When there are less than 2000 values, performs a shapiro test
+          nor.y<-shapiro.test(d$value.y)
+        }
+        
+        if (nor.x[["p.value"]] > 0.05 | nor.y[["p.value"]] > 0.05){#If one of p.values obtained in the previous test is greater than 0.05, performs correlation using the Pearson method
+          #Correlation test with Pearson method
+          ct<-cor.test(d$value.x, d$value.y, method="pearson")
+          #Analysis name, it is used to print the type of the analysis in the label
+          method<-"Pearson"
+          
+        } else {#If one of p.values obtained in the previous test is greater than 0.05, performs correlation using the Spearman method
+          ct<-cor.test(d$value.x, d$value.y, method="spearman", exact=FALSE)
+          #Analysis name, , it is used to print the type of the analysis in the label
+          method<-"Spearman"
+        }
+        
+        #Create a df (4 columns) containg the results of the analysis to print them in a table
+        #Columns: stock (for stock names), R (coeff label), 
+        #method (the used method in correlation test), P(p.value label)
+        data.frame(stock = i, 
+                   method=rep(method),
+                   R.coeff=ct[["estimate"]],
+                   P.value=ct[["p.value"]]
+        )
+        
+      }
+      
+      
+      #Loop over the list of stock and apply the cor.plot function. A list of the previous df is returned. 
+      cor.res<-lapply(stk.ls, cor.table, data=data, x=min.x, y=max.y)
+      #Bind all the df in the df.list    
+      cor.df<-rbindlist(cor.res)
+      cor.df
     }
   })
 })

@@ -57,6 +57,7 @@ shinyUI(fluidPage(
     mainPanel( 
 #       verbatimTextOutput('text'),
       plotOutput('plot'),
+      tableOutput("table"),
       #Avoid error messages to be printed in red color
       tags$style(type="text/css",
                  "#map.shiny-output-error { color: inherit;}",
